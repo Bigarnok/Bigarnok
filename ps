@@ -1,0 +1,166 @@
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'Plane Game (Windows 10)'
+$form.Width = 1100
+$form.Height = 650
+$form.StartPosition = 'CenterScreen'
+$form.BackColor = [System.Drawing.Color]::Black
+$form.KeyPreview = $true
+$form.DoubleBuffered = $true
+
+$state = [ordered]@{
+    PlaneY = 220.0
+    PlaneSpeedY = 0.0
+    MoveUp = $false
+    MoveDown = $false
+    CloudOffset = 0.0
+    TreeOffset = 0.0
+    LastTick = [Environment]::TickCount
+    Clouds = @()
+}
+
+$rand = New-Object System.Random
+for ($i = 0; $i -lt 10; $i++) {
+    $state.Clouds += [pscustomobject]@{
+        X = $rand.Next(0, 1400)
+        Y = $rand.Next(50, 220)
+        R = $rand.Next(20, 48)
+    }
+}
+
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 16
+
+$form.Add_KeyDown({
+    param($sender, $e)
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Up -or $e.KeyCode -eq [System.Windows.Forms.Keys]::W) {
+        $state.MoveUp = $true
+    }
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Down -or $e.KeyCode -eq [System.Windows.Forms.Keys]::S) {
+        $state.MoveDown = $true
+    }
+})
+
+$form.Add_KeyUp({
+    param($sender, $e)
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Up -or $e.KeyCode -eq [System.Windows.Forms.Keys]::W) {
+        $state.MoveUp = $false
+    }
+    if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Down -or $e.KeyCode -eq [System.Windows.Forms.Keys]::S) {
+        $state.MoveDown = $false
+    }
+})
+
+$timer.Add_Tick({
+    $now = [Environment]::TickCount
+    $dtMs = $now - $state.LastTick
+    if ($dtMs -lt 1) { $dtMs = 16 }
+    $state.LastTick = $now
+    $dt = [Math]::Min(0.033, $dtMs / 1000.0)
+
+    if ($state.MoveUp -and -not $state.MoveDown) {
+        $state.PlaneSpeedY = -380.0
+    } elseif ($state.MoveDown -and -not $state.MoveUp) {
+        $state.PlaneSpeedY = 380.0
+    } else {
+        $state.PlaneSpeedY *= 0.87
+    }
+
+    $h = [double]$form.ClientSize.Height
+    $topLimit = $h * 0.08
+    $bottomLimit = $h * 0.72
+    $state.PlaneY = [Math]::Max($topLimit, [Math]::Min($bottomLimit, $state.PlaneY + $state.PlaneSpeedY * $dt))
+
+    $state.CloudOffset += 80.0 * $dt
+    $state.TreeOffset += 120.0 * $dt
+
+    $form.Invalidate()
+})
+
+$form.Add_Paint({
+    param($sender, $e)
+
+    $g = $e.Graphics
+    $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+
+    $w = [double]$form.ClientSize.Width
+    $h = [double]$form.ClientSize.Height
+    $groundTop = [int]($h * 0.80)
+
+    $skyBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(130,200,255))
+    $groundBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(110,180,80))
+    $cloudBrush = [System.Drawing.Brushes]::White
+    $trunkBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(110,70,40))
+    $treeBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(35,150,60))
+    $planeBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(235,50,60))
+    $wingBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(250,230,80))
+    $cockpitBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(70,170,255))
+
+    $g.FillRectangle($skyBrush, 0, 0, $w, $h)
+
+    foreach ($c in $state.Clouds) {
+        $x = $c.X - ($state.CloudOffset % ($w + 220))
+        if ($x -lt -220) { $x += ($w + 220) }
+        $r = $c.R
+        $g.FillEllipse($cloudBrush, $x - $r, $c.Y - $r, $r * 2, $r * 2)
+        $g.FillEllipse($cloudBrush, $x + $r*0.4 - $r, $c.Y + $r*0.1 - $r, $r * 2, $r * 2)
+        $g.FillEllipse($cloudBrush, $x - $r*0.6 - $r, $c.Y + $r*0.1 - $r, $r * 2, $r * 2)
+    }
+
+    $g.FillRectangle($groundBrush, 0, $groundTop, $w, $h - $groundTop)
+
+    $spacing = [Math]::Max(75, [int]($w / 12))
+    $xTree = -([int]($state.TreeOffset % $spacing))
+    while ($xTree -lt ($w + $spacing)) {
+        $trunkW = [int]($spacing * 0.15)
+        $trunkH = [int]($h * 0.12)
+        $g.FillRectangle($trunkBrush, $xTree, $groundTop - $trunkH, $trunkW, $trunkH)
+        $cx = $xTree + $trunkW / 2
+        $tr = [int]($h * 0.05)
+        $g.FillEllipse($treeBrush, $cx - $tr, $groundTop - $trunkH - $tr, $tr * 2, $tr * 2)
+        $g.FillEllipse($treeBrush, $cx - $tr*1.5, $groundTop - $trunkH - $tr*0.8, $tr*1.4, $tr*1.4)
+        $g.FillEllipse($treeBrush, $cx + $tr*0.1, $groundTop - $trunkH - $tr*0.8, $tr*1.4, $tr*1.4)
+        $xTree += $spacing
+    }
+
+    $planeX = [int]($w * 0.22)
+    $planeY = [int]$state.PlaneY
+    $bodyW = [int]($h * 0.20)
+    $bodyH = [int]($h * 0.06)
+
+    $g.FillRectangle($planeBrush, $planeX, $planeY, $bodyW, $bodyH)
+
+    $nose = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $nose.AddPolygon(@(
+        [System.Drawing.PointF]::new($planeX + $bodyW, $planeY + $bodyH * 0.1),
+        [System.Drawing.PointF]::new($planeX + $bodyW + $bodyH * 0.7, $planeY + $bodyH * 0.5),
+        [System.Drawing.PointF]::new($planeX + $bodyW, $planeY + $bodyH * 0.9)
+    ))
+    $g.FillPath($planeBrush, $nose)
+
+    $wing = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $wing.AddPolygon(@(
+        [System.Drawing.PointF]::new($planeX + $bodyW * 0.35, $planeY + $bodyH * 0.5),
+        [System.Drawing.PointF]::new($planeX + $bodyW * 0.62, $planeY - $bodyH * 0.7),
+        [System.Drawing.PointF]::new($planeX + $bodyW * 0.72, $planeY + $bodyH * 0.5)
+    ))
+    $g.FillPath($wingBrush, $wing)
+
+    $g.FillRectangle($cockpitBrush, $planeX + $bodyW * 0.15, $planeY + $bodyH * 0.2, $bodyW * 0.30, $bodyH * 0.25)
+
+    $font = New-Object System.Drawing.Font('Segoe UI', 12, [System.Drawing.FontStyle]::Bold)
+    $g.DrawString('Управление: ↑/↓ или W/S', $font, [System.Drawing.Brushes]::White, 12, 10)
+
+    $skyBrush.Dispose(); $groundBrush.Dispose(); $trunkBrush.Dispose(); $treeBrush.Dispose();
+    $planeBrush.Dispose(); $wingBrush.Dispose(); $cockpitBrush.Dispose();
+    $nose.Dispose(); $wing.Dispose(); $font.Dispose()
+})
+
+$form.Add_Shown({ $timer.Start() })
+$form.Add_FormClosing({ $timer.Stop() })
+
+[void][System.Windows.Forms.Application]::Run($form)
