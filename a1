@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Desktop version of Plane Game.
+
+Run:
+    python3 desktop_game.py
+"""
+
+from __future__ import annotations
+
+import random
+import time
+import tkinter as tk
+
+
+class DesktopPlaneGame:
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.root.title("Plane Game (Desktop)")
+        self.width = 1100
+        self.height = 620
+        self.ground_top = int(self.height * 0.80)
+        self.canvas = tk.Canvas(root, width=self.width, height=self.height, highlightthickness=0)
+        self.canvas.pack(fill=tk.BOTH, expand=True)
+
+        self.plane_x = int(self.width * 0.22)
+        self.plane_y = int(self.height * 0.35)
+        self.plane_speed_y = 0.0
+        self.move_up = False
+        self.move_down = False
+
+        self.cloud_offset = 0.0
+        self.tree_offset = 0.0
+        self.cloud_data = [
+            (random.uniform(0, self.width), random.randint(60, 220), random.randint(24, 46))
+            for _ in range(11)
+        ]
+
+        self.last_t = time.perf_counter()
+
+        root.bind("<KeyPress-Up>", self._on_key_down)
+        root.bind("<KeyRelease-Up>", self._on_key_up)
+        root.bind("<KeyPress-Down>", self._on_key_down)
+        root.bind("<KeyRelease-Down>", self._on_key_up)
+        root.bind("w", self._on_key_down)
+        root.bind("s", self._on_key_down)
+        root.bind("<KeyRelease-w>", self._on_key_up)
+        root.bind("<KeyRelease-s>", self._on_key_up)
+
+        self.root.focus_force()
+        self._loop()
+
+    def _on_key_down(self, event: tk.Event) -> None:
+        if event.keysym in {"Up", "w"}:
+            self.move_up = True
+        elif event.keysym in {"Down", "s"}:
+            self.move_down = True
+
+    def _on_key_up(self, event: tk.Event) -> None:
+        if event.keysym in {"Up", "w"}:
+            self.move_up = False
+        elif event.keysym in {"Down", "s"}:
+            self.move_down = False
+
+    def _update(self, dt: float) -> None:
+        if self.move_up and not self.move_down:
+            self.plane_speed_y = -380.0
+        elif self.move_down and not self.move_up:
+            self.plane_speed_y = 380.0
+        else:
+            self.plane_speed_y *= 0.87
+
+        top_limit = int(self.height * 0.08)
+        bottom_limit = int(self.height * 0.72)
+        self.plane_y = int(max(top_limit, min(bottom_limit, self.plane_y + self.plane_speed_y * dt)))
+
+        self.cloud_offset += dt * 80.0
+        self.tree_offset += dt * 120.0
+
+    def _draw_cloud(self, cx: float, cy: float, r: float) -> None:
+        self.canvas.create_oval(cx - r, cy - r, cx + r, cy + r, fill="white", outline="")
+        self.canvas.create_oval(
+            cx + r * 0.45 - r,
+            cy + r * 0.15 - r,
+            cx + r * 0.45 + r,
+            cy + r * 0.15 + r,
+            fill="white",
+            outline="",
+        )
+        self.canvas.create_oval(
+            cx - r * 0.55 - r,
+            cy + r * 0.12 - r,
+            cx - r * 0.55 + r,
+            cy + r * 0.12 + r,
+            fill="white",
+            outline="",
+        )
+
+    def _draw_plane(self) -> None:
+        x = self.plane_x
+        y = self.plane_y
+        body_w = int(self.height * 0.20)
+        body_h = int(self.height * 0.06)
+
+        self.canvas.create_rectangle(x, y, x + body_w, y + body_h, fill="#eb323c", outline="")
+        self.canvas.create_polygon(
+            x + body_w,
+            y + body_h * 0.1,
+            x + body_w + body_h * 0.7,
+            y + body_h * 0.5,
+            x + body_w,
+            y + body_h * 0.9,
+            fill="#eb323c",
+            outline="",
+        )
+        self.canvas.create_polygon(
+            x + body_w * 0.35,
+            y + body_h * 0.5,
+            x + body_w * 0.62,
+            y - body_h * 0.7,
+            x + body_w * 0.72,
+            y + body_h * 0.5,
+            fill="#fae650",
+            outline="",
+        )
+        self.canvas.create_rectangle(
+            x + body_w * 0.15,
+            y + body_h * 0.2,
+            x + body_w * 0.45,
+            y + body_h * 0.45,
+            fill="#46aaff",
+            outline="",
+        )
+
+    def _draw(self) -> None:
+        self.canvas.delete("all")
+        self.canvas.create_rectangle(0, 0, self.width, self.height, fill="#82c8ff", outline="")
+
+        for base_x, y, r in self.cloud_data:
+            x = base_x - (self.cloud_offset % (self.width + 200))
+            if x < -200:
+                x += self.width + 200
+            self._draw_cloud(x, y, r)
+
+        self.canvas.create_rectangle(0, self.ground_top, self.width, self.height, fill="#6eb450", outline="")
+
+        spacing = max(75, self.width // 12)
+        start_x = int(-(self.tree_offset % spacing))
+        x = start_x
+        while x < self.width + spacing:
+            trunk_w = int(spacing * 0.15)
+            trunk_h = int(self.height * 0.12)
+            self.canvas.create_rectangle(
+                x,
+                self.ground_top - trunk_h,
+                x + trunk_w,
+                self.ground_top,
+                fill="#6e4628",
+                outline="",
+            )
+            cx = x + trunk_w / 2
+            tr = int(self.height * 0.05)
+            self.canvas.create_oval(cx - tr, self.ground_top - trunk_h - tr, cx + tr, self.ground_top - trunk_h + tr, fill="#23963c", outline="")
+            self.canvas.create_oval(
+                cx - tr * 1.5,
+                self.ground_top - trunk_h - tr * 0.8,
+                cx - tr * 0.1,
+                self.ground_top - trunk_h + tr * 0.7,
+                fill="#23963c",
+                outline="",
+            )
+            self.canvas.create_oval(
+                cx + tr * 0.1,
+                self.ground_top - trunk_h - tr * 0.8,
+                cx + tr * 1.5,
+                self.ground_top - trunk_h + tr * 0.7,
+                fill="#23963c",
+                outline="",
+            )
+            x += spacing
+
+        self._draw_plane()
+
+        self.canvas.create_text(
+            14,
+            18,
+            anchor="nw",
+            text="Управление: ↑/↓ или W/S",
+            fill="white",
+            font=("Arial", 15, "bold"),
+        )
+
+    def _loop(self) -> None:
+        now = time.perf_counter()
+        dt = min(0.033, max(0.001, now - self.last_t))
+        self.last_t = now
+        self._update(dt)
+        self._draw()
+        self.root.after(16, self._loop)
+
+
+def main() -> None:
+    root = tk.Tk()
+    DesktopPlaneGame(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
